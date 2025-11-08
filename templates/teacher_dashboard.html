@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teacher Dashboard - QR Attendance</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="#">🎯 QR Attend - Teacher</a>
+            <div class="navbar-nav ms-auto">
+                <span class="navbar-text me-3">Welcome, {{ session.name }}</span>
+                <a class="btn btn-outline-light btn-sm me-2" href="{{ url_for('manage_folders') }}">📁 Manage Folders</a>
+                <a class="btn btn-outline-light btn-sm me-2" href="{{ url_for('teacher_reports') }}">📊 Reports</a>
+                <a class="btn btn-outline-light btn-sm" href="{{ url_for('logout') }}">Logout</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ 'danger' if category == 'error' else 'success' }} alert-dismissible fade show">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <div class="row">
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0">Create New Class</h5>
+                    </div>
+                    <div class="card-body">
+                        <form method="POST" action="{{ url_for('create_class') }}">
+                            <div class="mb-3">
+                                <label class="form-label">Subject</label>
+                                <input type="text" name="subject" class="form-control" placeholder="e.g., Mathematics" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Date</label>
+                                <input type="date" name="date" class="form-control" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">QR Code Expiry (Minutes)</label>
+                                <input type="number" name="expiry_minutes" class="form-control" value="60" min="1" required>
+                                <small class="text-muted">QR code will expire after this time</small>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Classroom Latitude</label>
+                                <input type="number" step="any" name="location_lat" class="form-control" value="12.9716" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Classroom Longitude</label>
+                                <input type="number" step="any" name="location_lng" class="form-control" value="77.5946" required>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Select Folder</label>
+                                <select name="folder_id" class="form-control" required id="folderSelect">
+                                    <option value="">-- Select Folder --</option>
+                                    {% for folder in folders %}
+                                    <option value="{{ folder.id }}">{{ folder.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Select Section</label>
+                                <select name="section_id" class="form-control" required id="sectionSelect">
+                                    <option value="">-- Please select a folder first --</option>
+                                </select>
+                            </div>
+                            <button type="submit" class="btn btn-success w-100">Create Class & Generate QR</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0">My Classes</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if classes %}
+                            <div class="row">
+                                {% for class in classes %}
+                                <div class="col-md-6 mb-3">
+                                    <div class="card">
+                                        <div class="card-body">
+                                            <h6 class="card-title">{{ class.subject }}</h6>
+                                            <p class="card-text">
+                                                <small class="text-muted">Date: {{ class.date }}</small><br>
+                                                <small class="text-muted">Folder: {{ class.folder_name or 'N/A' }}</small><br>
+                                                <small class="text-muted">Section: {{ class.section_name or 'N/A' }}</small><br>
+                                                <small class="text-muted">Expires: {{ class.expiry_time[:16] if class.expiry_time else 'N/A' }}</small><br>
+                                                <small class="text-muted">Status: 
+                                                    <span class="badge bg-{{ 'success' if class.status == 'Active' else 'danger' }}">
+                                                        {{ class.status }}
+                                                    </span>
+                                                </small>
+                                            </p>
+                                            {% if class.qr_code_path %}
+                                            <div class="text-center">
+                                                <img src="{{ url_for('static', filename=class.qr_code_path) }}" 
+                                                     alt="QR Code" class="img-fluid" style="max-width: 150px;">
+                                                <p class="mt-2"><small>Scan this QR code for attendance</small></p>
+                                            </div>
+                                            {% endif %}
+                                            
+                                            <!-- QR Code Controls -->
+                                            <div class="text-center mt-2">
+                                                <form action="{{ url_for('extend_qr_time', class_id=class.id) }}" method="POST" class="d-inline">
+                                                    <div class="input-group input-group-sm mb-2">
+                                                        <input type="number" name="additional_minutes" class="form-control" placeholder="Minutes" min="1" required>
+                                                        <button type="submit" class="btn btn-warning btn-sm">Extend Time</button>
+                                                    </div>
+                                                </form>
+                                                
+                                                <form action="{{ url_for('toggle_qr_code', class_id=class.id) }}" method="POST" class="d-inline">
+                                                    <button type="submit" class="btn btn-{{ 'danger' if class.is_active else 'success' }} btn-sm">
+                                                        {{ 'Stop QR' if class.is_active else 'Activate QR' }}
+                                                    </button>
+                                                </form>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            <p class="text-muted text-center">No classes created yet.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Load sections based on selected folder
+        document.getElementById('folderSelect').addEventListener('change', function() {
+            const folderId = this.value;
+            const sectionSelect = document.getElementById('sectionSelect');
+            
+            if (folderId) {
+                // Show loading message
+                sectionSelect.innerHTML = '<option value="">Loading sections...</option>';
+                
+                // Fetch sections from API
+                fetch(`/api/folder/${folderId}/sections`)
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Network response was not ok');
+                        }
+                        return response.json();
+                    })
+                    .then(sections => {
+                        sectionSelect.innerHTML = '';
+                        
+                        if (sections.length > 0) {
+                            // Add default option
+                            const defaultOption = document.createElement('option');
+                            defaultOption.value = '';
+                            defaultOption.textContent = '-- Select Section --';
+                            sectionSelect.appendChild(defaultOption);
+                            
+                            // Add all sections
+                            sections.forEach(section => {
+                                const option = document.createElement('option');
+                                option.value = section.id;
+                                option.textContent = section.name;
+                                sectionSelect.appendChild(option);
+                            });
+                        } else {
+                            sectionSelect.innerHTML = '<option value="">-- No sections found. Please create sections first --</option>';
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error loading sections:', error);
+                        sectionSelect.innerHTML = '<option value="">-- Error loading sections --</option>';
+                    });
+            } else {
+                sectionSelect.innerHTML = '<option value="">-- Please select a folder first --</option>';
+            }
+        });
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
